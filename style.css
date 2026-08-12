@@ -2251,6 +2251,40 @@ gap: 12px;
     margin: 0 5px;
 }
 
+/* Three figures where the other tiles carry one, so they are set smaller than a stat value
+   and given room to breathe rather than shrinking the tile's own line height. The tile is
+   allowed to take two columns where the grid has them to give: three numbers at one column's
+   width sit closer together than the eye can separate them. */
+.script-box {
+    grid-column: span 2;
+}
+
+.script-tally {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 12px;
+}
+
+.script-part {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 3px;
+}
+
+.script-count {
+    font-size: 1.05rem;
+    font-weight: 800;
+}
+
+/* The script itself, standing in for its name. Muted and small so the row reads as three
+   numbers with a mark against each rather than as six things. */
+.script-mark {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--text-muted);
+}
+
 .typed-words-section {
     display: flex;
     flex-direction: column;
@@ -3826,6 +3860,13 @@ html {
     .stats-grid {
         grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
         gap: 8px;
+    }
+
+    /* A whole row at this width rather than two of however many columns are left, which on
+       the narrowest screens is a track the grid hasn't got and so a tile hanging off the
+       side of the card */
+    .script-box {
+        grid-column: 1 / -1;
     }
 
     .modal-card {

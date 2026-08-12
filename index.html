@@ -709,6 +709,27 @@
                         <span class="stat-value" id="res-accuracy">100%</span>
                         <span class="stat-label">ACCURACY</span>
                     </div>
+                    <!-- What this run is worth to the profile's character counts, split the
+                         way the profile keeps them. Marked with the scripts themselves
+                         rather than their names: 漢 あ ア are shorter than the words and are
+                         the thing being counted. -->
+                    <div class="stat-box script-box hidden" id="res-script-box">
+                        <span class="stat-value script-tally">
+                            <span class="script-part">
+                                <span class="script-count" id="res-kanji">0</span>
+                                <span class="script-mark">漢</span>
+                            </span>
+                            <span class="script-part">
+                                <span class="script-count" id="res-hiragana">0</span>
+                                <span class="script-mark">あ</span>
+                            </span>
+                            <span class="script-part">
+                                <span class="script-count" id="res-katakana">0</span>
+                                <span class="script-mark">ア</span>
+                            </span>
+                        </span>
+                        <span class="stat-label">TO PROFILE</span>
+                    </div>
                 </div>
                 <div class="result-graph-wrap" id="res-graph"></div>
                 <div class="typed-words-section">
@@ -1673,6 +1694,19 @@ let romajiAlt = "";
         // result is sent back when the test ends
         let isMultiplayerRace = false;
         let completedItemsSession = [];
+
+        /* What this run alone put into the profile's character counts, kept apart from the
+           stats object those counts are sent from. That one holds a delta rather than a
+           total — it is emptied every time it is flushed, and a long run flushes part way
+           through — so by the time the results are drawn it no longer knows what the run
+           was worth. This is only ever added to, and only cleared when a run begins. */
+        const scriptTallySession = { kanji: 0, hiragana: 0, katakana: 0 };
+
+        function clearScriptTally() {
+            scriptTallySession.kanji = 0;
+            scriptTallySession.hiragana = 0;
+            scriptTallySession.katakana = 0;
+        }
 
         let activePlayTimeMs = parseInt(localStorage.getItem("anki_type_play_time") || "0", 10);
         let lastTypingTimestamp = 0;
@@ -2842,6 +2876,7 @@ let romajiAlt = "";
         correctKeystrokes = 0;
         isSeededTest = true;
         completedItemsSession = [];
+        clearScriptTally();
 
         clearInterval(testTimerInterval);
         isTestActive = false;
@@ -3168,6 +3203,20 @@ let romajiAlt = "";
             }).catch(err => console.error("Could not save test history:", err));
         }
 
+        /* The run's share of the profile's character counts, which is what the numbers on
+           this tile become the moment the run is flushed. Hidden outright when there is
+           nothing in it: the tile is there to report a gain, and an empty one would read as
+           a broken counter rather than as a run that banked nothing. */
+        function showScriptTally({ kanji = 0, hiragana = 0, katakana = 0 } = {}) {
+            const box = document.getElementById("res-script-box");
+            if (!box) return;
+
+            box.classList.toggle("hidden", !(kanji || hiragana || katakana));
+            document.getElementById("res-kanji").textContent = kanji;
+            document.getElementById("res-hiragana").textContent = hiragana;
+            document.getElementById("res-katakana").textContent = katakana;
+        }
+
         /* Plots the run: CPM as a line over elapsed seconds, with a mark at each typo.
            Drawn as inline SVG rather than pulling in a chart library — it is one line and
            some dots, and the page already refuses external scripts it doesn't need. */
@@ -3272,6 +3321,12 @@ let romajiAlt = "";
             document.getElementById("res-accuracy").textContent =
                 keystrokes ? `${Math.round((correctKeystrokes / keystrokes) * 100)}%` : "—";
 
+            /* The characters this run banked. Shown only when there are some: a run of
+               nothing but workshop punctuation, or one ended before a word was finished,
+               banks nothing, and three zeroes would say the counting was broken rather than
+               that there was nothing to count. */
+            showScriptTally(scriptTallySession);
+
             // A test the user idled out of isn't a real attempt: it doesn't reach the
             // profile at all. No CPM (so it can't drag the average down or inflate the
             // test count), and the playtime and character counts it accrued are dropped
@@ -3344,19 +3399,23 @@ let romajiAlt = "";
             const chars = [...surface];
             const keystrokes = typedRomaji.length;
 
+            /* Credited in one place so the run's own tally can't come apart from the totals
+               the profile is sent: nothing reaches one without reaching the other. */
+            const credit = (script, count) => {
+                stats[`${script}Count`] += count;
+                stats.totalChars += count;
+                scriptTallySession[script] += count;
+            };
+
             if (chars.length && chars.every(isHiragana)) {
-                stats.hiraganaCount += keystrokes;
-                stats.totalChars += keystrokes;
+                credit("hiragana", keystrokes);
             } else if (chars.length && chars.every(isKatakana)) {
-                stats.katakanaCount += keystrokes;
-                stats.totalChars += keystrokes;
+                credit("katakana", keystrokes);
             } else {
                 for (const char of chars) {
-                    if (isKanji(char)) stats.kanjiCount++;
-                    else if (isHiragana(char)) stats.hiraganaCount++;
-                    else if (isKatakana(char)) stats.katakanaCount++;
-                    else continue;
-                    stats.totalChars++;
+                    if (isKanji(char)) credit("kanji", 1);
+                    else if (isHiragana(char)) credit("hiragana", 1);
+                    else if (isKatakana(char)) credit("katakana", 1);
                 }
             }
             localStorage.setItem("anki_type_stats", JSON.stringify(stats));
@@ -4651,6 +4710,7 @@ function setMode(mode, shouldReload = true) {
             mistakesSession = 0;
             lastSyncedMistakes = 0;
             completedItemsSession = [];
+            clearScriptTally();
 
             clearInterval(testTimerInterval);
             isTestActive = false;
@@ -6829,6 +6889,11 @@ function setMode(mode, shouldReload = true) {
             document.getElementById("res-accuracy").textContent = record.total_chars
                 ? `${Math.round((record.correct_chars / record.total_chars) * 100)}%`
                 : "—";
+
+            /* A past run's characters went into the profile when it was typed, and the
+               history keeps no breakdown of them, so there is nothing to show here and the
+               tile stays away rather than reporting somebody else's run as a fresh gain. */
+            showScriptTally();
 
             // Never recorded, so it is said plainly rather than drawn as an empty chart
             document.getElementById("res-graph").innerHTML =
