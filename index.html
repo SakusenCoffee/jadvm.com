@@ -1821,9 +1821,22 @@ let romajiAlt = "";
            The canonical spelling stays the one the word displays and the one that lands in
            the typed line; an alternate is only another road to the same syllable.
 
+           What is listed here is the kunrei/nihon-shiki row: the syllables where Hepburn
+           spells the sound as English hears it and the older romanisations spell it as the
+           kana table runs. し is the s-row's i, so 社会 is "syakai" as readily as "shakai",
+           and someone taught that way should not be told they mistyped their own language.
+           Only the syllables that actually differ appear — "ka" is "ka" in every system.
+
+           The sokuon comes out right without being listed. Hepburn doubles the first letter
+           of the sound (こっち is "kotchi", こっし is "sshi"), and a syllable is looked for
+           from a couple of letters back, so the alternate is found starting at the "chi" or
+           the "shi" and the doubled consonant in front of it is left standing: "kotti" and
+           "ssi" both land.
+
            `onlyKana` is for the spellings that the romaji alone can't tell apart. づ and ず
            are both written "zu", and only one of them is ever typed "du" — so that entry
-           asks which kana is sitting at this point in the word.
+           asks which kana is sitting at this point in the word. ぢ and じ are the same
+           question one row up.
 
            It can only ask where there is something to ask. A word written in kana carries
            its own answer: ず is ず and refuses "du", which is the distinction a kana test
@@ -1832,8 +1845,29 @@ let romajiAlt = "";
            so for those the question is unanswerable and the alternate is allowed. The cost
            is that "du" also passes for 水; the alternative was that it failed for 続く. */
         const ROMAJI_ALTERNATES = {
-            tsu: { spellings: ["tu"] },
-            zu: { spellings: ["du"], onlyKana: /[づヅ]/ }
+            // The s row: し, and し with a small ya/yu/yo
+            shi: [{ letters: "si" }],
+            sha: [{ letters: "sya" }],
+            shu: [{ letters: "syu" }],
+            sho: [{ letters: "syo" }],
+
+            // The t row: ち and つ, and ち with a small ya/yu/yo
+            chi: [{ letters: "ti" }],
+            tsu: [{ letters: "tu" }],
+            cha: [{ letters: "tya" }],
+            chu: [{ letters: "tyu" }],
+            cho: [{ letters: "tyo" }],
+
+            // The h row: ふ
+            fu: [{ letters: "hu" }],
+
+            /* The voiced pairs. "jya" is nobody's romanisation but every IME takes it, and
+               it is what someone who types "ja" as j+ya reaches for. */
+            ji: [{ letters: "zi" }, { letters: "di", onlyKana: /[ぢヂ]/ }],
+            ja: [{ letters: "zya" }, { letters: "jya" }],
+            ju: [{ letters: "zyu" }, { letters: "jyu" }],
+            jo: [{ letters: "zyo" }, { letters: "jyo" }],
+            zu: [{ letters: "du", onlyKana: /[づヅ]/ }]
         };
 
         const LONGEST_ALTERNATE_KEY = Math.max(
@@ -1952,21 +1986,24 @@ let romajiAlt = "";
 
             let partial = null;
             for (const { start, attempt } of tries) {
-                for (const [canonical, entry] of Object.entries(ROMAJI_ALTERNATES)) {
+                for (const [canonical, alternates] of Object.entries(ROMAJI_ALTERNATES)) {
                     if (!romaji.startsWith(canonical, start)) continue;
 
-                    /* The wrong kana for this spelling — asked only of words that are
-                       written in kana, since those are the only ones whose kana is known
-                       rather than guessed back from the romaji. */
-                    if (entry.onlyKana && isWrittenInKana(word)) {
-                        const kana = kanaAt(start);
-                        if (!kana || !entry.onlyKana.test(kana)) continue;
-                    }
+                    for (const alternate of alternates) {
+                        /* The wrong kana for this spelling — asked only of words that are
+                           written in kana, since those are the only ones whose kana is known
+                           rather than guessed back from the romaji. Per spelling rather than
+                           per syllable: じ takes "zi" from anything and "di" only from ぢ. */
+                        if (alternate.onlyKana && isWrittenInKana(word)) {
+                            const kana = kanaAt(start);
+                            if (!kana || !alternate.onlyKana.test(kana)) continue;
+                        }
 
-                    for (const alternate of entry.spellings) {
-                        if (alternate === attempt) return { start, canonical, attempt, complete: true };
+                        if (alternate.letters === attempt) {
+                            return { start, canonical, attempt, complete: true };
+                        }
                         // A finished alternate elsewhere in the table beats a half-typed one
-                        if (!partial && alternate.startsWith(attempt)) {
+                        if (!partial && alternate.letters.startsWith(attempt)) {
                             partial = { start, canonical, attempt, complete: false };
                         }
                     }
