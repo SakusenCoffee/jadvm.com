@@ -525,13 +525,13 @@ body {
     gap: 12px;
 }
 
+/* No box of its own: the chips are the only thing that should draw. Grouping is read from
+   the spacing and the dividers between groups, and the one filled chip is the only mark on
+   the row, so the selected option is what the eye lands on rather than six framed panels. */
 .count-selector-group {
     display: flex;
     gap: 4px;
-    background-color: var(--nav-bg);
     padding: 4px;
-    border-radius: 8px;
-    border: 1px solid var(--border-color);
 }
 
 .selector-divider {
