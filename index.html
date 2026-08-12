@@ -1781,8 +1781,122 @@ let romajiAlt = "";
             return glyphs.length > 0 && glyphs.every(g => isHiragana(g) || isKatakana(g));
         }
 
+        /* ---- What the test asks for once the okurigana are gone -------------------------
+           Taking the く off 続く leaves 続 on screen, and the reading asked for goes with it:
+           つづ, not つづく. Otherwise the word on screen and the word being typed are two
+           different things, and the ending you have to supply is one the display has
+           deliberately stopped telling you about — not a harder reading, just an invisible
+           one.
+
+           The kanji's share of the reading is found by lining the two up. The surface splits
+           into runs of kanji and runs of kana; every kana run has to turn up in the reading,
+           and whatever lies between two of them belongs to the kanji in between. 走り回る
+           against はしりまわる finds り at 2 and る at 5, so 走 is はし and 回 is まわ, and what
+           is left once the okurigana go is はしまわ.
+
+           Kana before any kanji are not okurigana and stay — お茶 is お茶 either way — which
+           is the same rule stripOkurigana draws the surface by, so the two agree on what has
+           been taken away.
+
+           A run that can't be found gives up and the whole word is asked for as before. That
+           covers a reading that doesn't spell its surface at all (明日 is あした, with no し
+           to hang on 日) and anything that arrived without a reading worth aligning. Erring
+           towards asking for too much: a word you must type in full is a word you can type,
+           where a wrong guess at the split is a word you cannot finish. */
+        /* 々 repeats the kanji before it, so it belongs to that run rather than opening one
+           of its own: 図々しい is 図々 and an ending, not 図 with 々しい hung off it. That is
+           also how stripOkurigana leaves it, since it is neither kanji nor kana to drop. */
+        function surfaceRuns(text) {
+            const runs = [];
+            for (const ch of String(text)) {
+                const type = (isKanji(ch) || ch === "々") ? "kanji" : "kana";
+                const last = runs[runs.length - 1];
+                if (last && last.type === type) last.text += ch;
+                else runs.push({ type, text: ch });
+            }
+            return runs;
+        }
+
+        // Both in hiragana by the time they get here, so ソ連 and そ連 line up the same way
+        function readingWithoutOkurigana(surface, reading) {
+            const runs = surfaceRuns(surface);
+
+            let seenKanji = false;
+            runs.forEach(run => {
+                if (run.type === "kanji") seenKanji = true;
+                // Kana before any kanji are not okurigana: お茶 is お茶 either way
+                else run.okurigana = seenKanji;
+            });
+
+            /* Each kana run is tried at the earliest place it could sit and the search backs
+               out of it if the rest of the word won't fit afterwards. 五つ against いつつ
+               offers a つ at the second kana, which leaves the third with nothing to be, so
+               the search moves on to the つ that does work and 五 comes out as いつ. */
+            const walk = (i, at, kept) => {
+                if (i === runs.length) return at === reading.length ? kept : null;
+                const run = runs[i];
+
+                if (run.type !== "kanji") {
+                    if (!reading.startsWith(run.text, at)) return null;
+                    return walk(i + 1, at + run.text.length,
+                        run.okurigana ? kept : kept + run.text);
+                }
+
+                const next = runs[i + 1];
+                // Nothing after it, so it reads as everything that is left
+                if (!next) return walk(i + 1, reading.length, kept + reading.slice(at));
+
+                // A kanji is worth at least one kana, so its okurigana can't begin where the
+                // kanji itself does — 生きる must not read 生 as nothing and hand い to the end
+                for (let found = reading.indexOf(next.text, at + 1);
+                        found >= 0;
+                        found = reading.indexOf(next.text, found + 1)) {
+                    const done = walk(i + 1, found, kept + reading.slice(at, found));
+                    if (done !== null) return done;
+                }
+                return null;
+            };
+
+            return walk(0, 0, "");
+        }
+
+        /* Worked out once per word and kept, but only ever for the mode that needs it: with
+           the okurigana showing the answer is the stored spelling and nothing is cached, so
+           the entry can never be the wrong mode's. */
+        const typedRomajiCache = new WeakMap();
+
+        // The romaji this word is actually typed as, which is its stored spelling unless the
+        // okurigana have been taken off the front of the screen
+        function typedRomajiFor(word) {
+            if (!word || !word.romaji) return "";
+            if (kanjiDisplay !== "okurigana") return word.romaji;
+
+            if (typedRomajiCache.has(word)) return typedRomajiCache.get(word);
+
+            let required = word.romaji;
+            // Nothing was taken away, so there is nothing to take out of the reading
+            if (stripOkurigana(word.kanji) !== word.kanji) {
+                try {
+                    const kept = readingWithoutOkurigana(
+                        toHiraganaKey(word.kanji), kanaSpelling(word));
+                    const letters = kept ? normalizeRomaji(wanakana.toRomaji(kept)) : "";
+                    if (letters) required = letters;
+                } catch (err) {
+                    console.error("Could not take the okurigana out of a reading:", err);
+                }
+            }
+
+            typedRomajiCache.set(word, required);
+            return required;
+        }
+
         function kanaUnitsFor(word) {
-            if (kanaUnitCache.has(word)) return kanaUnitCache.get(word);
+            /* Keyed by the spelling they were built from rather than by the word alone: the
+               okurigana switch changes what is being typed, and units for つづく would count
+               a keystroke that つづ hasn't got. */
+            const required = typedRomajiFor(word);
+            const cached = kanaUnitCache.get(word);
+            if (cached && cached.romaji === required) return cached.units;
 
             let units = null;
             try {
@@ -1790,7 +1904,7 @@ let romajiAlt = "";
                 // A kana test already shows the kana; anything else is read from the romaji
                 const kana = glyphs.length && glyphs.every(g => isHiragana(g) || isKatakana(g))
                     ? word.kanji
-                    : wanakana.toKana(word.romaji);
+                    : wanakana.toKana(required);
 
                 const chars = [...toHiraganaKey(kana)];
                 const built = [];
@@ -1803,14 +1917,14 @@ let romajiAlt = "";
                 }
 
                 // Only usable if the pieces really do spell the word being typed
-                if (built.length && built.map(u => u.romaji).join("") === word.romaji) {
+                if (built.length && built.map(u => u.romaji).join("") === required) {
                     units = built;
                 }
             } catch (err) {
                 console.error("Could not derive kana units:", err);
             }
 
-            kanaUnitCache.set(word, units);
+            kanaUnitCache.set(word, { romaji: required, units });
             return units;
         }
 
@@ -1939,14 +2053,14 @@ let romajiAlt = "";
             const spellings = new Set();
             readings.forEach(kana => {
                 const letters = normalizeRomaji(wanakana.toRomaji(kana));
-                // The stored spelling is not an alternate to itself
-                if (letters && letters !== word.romaji) spellings.add(letters);
+                // The spelling being typed is not an alternate to itself
+                if (letters && letters !== typedRomajiFor(word)) spellings.add(letters);
             });
             return [...spellings];
         }
 
         function findRomajiAlternate(word, cursor, pending, keyTyped) {
-            const romaji = word.romaji;
+            const romaji = typedRomajiFor(word);
 
             /* A reading of a bare kanji spells the whole word, so it is only ever offered
                from the start of it — half a word plus another reading of it is neither. */
@@ -3202,7 +3316,10 @@ let romajiAlt = "";
         function logCompletedWord(wordObj) {
             stats.wordsTyped++;
             completedItemsSession.push(wordObj.kanji);
-            totalTypedChars += wordObj.romaji.length;
+            // The spelling that was actually asked for, which is short of the stored one
+            // whenever this word was shown with its okurigana taken off
+            const typedRomaji = typedRomajiFor(wordObj);
+            totalTypedChars += typedRomaji.length;
 
             /* A kana entry can be a digraph: ぎょ is two glyphs but three keystrokes, and
                counting the glyphs credited two. For an all-kana entry the whole romaji
@@ -3216,8 +3333,16 @@ let romajiAlt = "";
                typed like everything else but they are not Japanese you have practised, so
                crediting them would have inflated the profile with the parts of a subtitle
                that were never the point. */
-            const chars = [...wordObj.kanji];
-            const keystrokes = wordObj.romaji.length;
+            /* Counted against what was on screen: with the okurigana hidden the く of 続く
+               was neither shown nor typed, so crediting it would put a character in the
+               profile that no key was ever pressed for. Kana mode is left alone — it shows a
+               reading and asks for all of it, so the entry's own glyphs are what was
+               practised. */
+            const surface = kanjiDisplay === "okurigana"
+                ? stripOkurigana(wordObj.kanji)
+                : wordObj.kanji;
+            const chars = [...surface];
+            const keystrokes = typedRomaji.length;
 
             if (chars.length && chars.every(isHiragana)) {
                 stats.hiraganaCount += keystrokes;
@@ -4567,10 +4692,13 @@ function setMode(mode, shouldReload = true) {
             const romajiNode = document.createElement("div");
             romajiNode.className = `romaji-text ${!showRomaji ? 'hidden' : ''}`;
 
-            for (let i = 0; i < wordObj.romaji.length; i++) {
+            // The hint spells what is being asked for, which is short of the stored spelling
+            // whenever the okurigana have been taken off the kanji above it
+            const shownRomaji = typedRomajiFor(wordObj);
+            for (let i = 0; i < shownRomaji.length; i++) {
                 const charSpan = document.createElement("span");
                 charSpan.className = "char";
-                charSpan.textContent = wordObj.romaji[i];
+                charSpan.textContent = shownRomaji[i];
                 romajiNode.appendChild(charSpan);
             }
 
@@ -4829,6 +4957,8 @@ function setMode(mode, shouldReload = true) {
             playKeySound();
 
             const currentWord = activeWordList[currentIndex];
+            // What this word is being typed as, which the okurigana switch has a say in
+            const currentRomaji = typedRomajiFor(currentWord);
 
             if (key === "Backspace") {
                 // The half-finished syllable goes first: it is the most recent thing typed
@@ -4855,14 +4985,14 @@ function setMode(mode, shouldReload = true) {
                 correctKeystrokes++;
                 if (isMultiplayerRace) mpReportProgress();
 
-                if (typedInput.length === currentWord.romaji.length) {
+                if (typedInput.length === currentRomaji.length) {
                     const finishedWordNode = wordsContainer.children[currentIndex];
                     finishedWordNode.classList.remove("active");
                     finishedWordNode.classList.add("completed");
 
                     // Words mode counts words; kana mode is labelled CHARS TYPED, so it
                     // counts the keystrokes that spelled them rather than the entries
-                    totalScore += (activeSource === "tango") ? 1 : currentWord.romaji.length;
+                    totalScore += (activeSource === "tango") ? 1 : currentRomaji.length;
                     scoreEl.textContent = totalScore;
 
                     logCompletedWord(currentWord);
@@ -4940,7 +5070,7 @@ function setMode(mode, shouldReload = true) {
                     kanaPartial += toHiraganaKey(key);
                     if (kanaPartial.length === unit.kana.length) {
                         kanaPartial = "";
-                        const upToUnitEnd = currentWord.romaji.slice(0, unitStart + unit.romaji.length);
+                        const upToUnitEnd = currentRomaji.slice(0, unitStart + unit.romaji.length);
                         typedInput = [];
                         acceptKeypress([...upToUnitEnd]);
                     } else {
@@ -4955,7 +5085,7 @@ function setMode(mode, shouldReload = true) {
             }
 
             const keyTyped = key.toLowerCase();
-            const expectedChar = currentWord.romaji[typedInput.length];
+            const expectedChar = currentRomaji[typedInput.length];
 
             /* A letter arriving mid-syllable, after a kana that was waiting on its small
                partner. The two spellings can't be interleaved inside one syllable, so this
@@ -4978,14 +5108,14 @@ function setMode(mode, shouldReload = true) {
                        already standing in for this syllable are replaced wholesale, since an
                        alternate can be shorter or longer than the spelling on screen. */
                     romajiAlt = "";
-                    typedInput = [...currentWord.romaji.slice(0, alt.start)];
-                    acceptKeypress([...currentWord.romaji.slice(
+                    typedInput = [...currentRomaji.slice(0, alt.start)];
+                    acceptKeypress([...currentRomaji.slice(
                         alt.start, alt.start + alt.canonical.length)]);
                 } else {
                     /* Part-way in. Which canonical letters this will land on isn't settled
                        yet, so the syllable goes back to looking untyped until it is. */
                     romajiAlt = alt.attempt;
-                    typedInput = [...currentWord.romaji.slice(0, alt.start)];
+                    typedInput = [...currentRomaji.slice(0, alt.start)];
                     correctKeystrokes++;
                     if (isMultiplayerRace) mpReportProgress();
                 }
@@ -5860,9 +5990,8 @@ function setMode(mode, shouldReload = true) {
             if (!force && now - mpLastProgressSent < MP_PROGRESS_INTERVAL_MS) return;
 
             const word = activeWordList[currentIndex];
-            const partial = word && word.romaji.length
-                ? typedInput.length / word.romaji.length
-                : 0;
+            const required = word ? typedRomajiFor(word) : "";
+            const partial = required.length ? typedInput.length / required.length : 0;
             const done = Math.min(activeWordList.length, currentIndex + partial);
             const percent = (done / activeWordList.length) * 100;
 
@@ -6124,7 +6253,15 @@ function setMode(mode, shouldReload = true) {
                 syncKanjiDisplayChips();
 
                 /* Only the writing changes, so the run carries on: the words are redrawn
-                   and the cursor put back where it was, rather than the test restarting. */
+                   and the cursor put back where it was, rather than the test restarting.
+
+                   The word under the cursor starts over, though, and only that one. Hiding
+                   the okurigana changes what it is asking for, so letters typed towards
+                   つづく are letters towards a word that is no longer there — and if more of
+                   them had been typed than つづ has, the word could never be finished. */
+                typedInput = [];
+                kanaPartial = "";
+                romajiAlt = "";
                 renderWordBlock();
                 updateVisibility();
                 updateDisplay();
