@@ -315,6 +315,20 @@ body {
     flex-shrink: 0;
     gap: 8px;
     color: var(--text-primary);
+    /* It restarts the run, so it has to look like something you can press. Dimming on the
+       press rather than lighting on hover: the name is already the brightest thing in the
+       bar, and there is nowhere above it to go. */
+    cursor: pointer;
+    user-select: none;
+    transition: opacity 0.15s ease;
+}
+
+.nav-brand:hover {
+    opacity: 0.75;
+}
+
+.nav-brand:active {
+    opacity: 0.5;
 }
 
 .logo-dot {

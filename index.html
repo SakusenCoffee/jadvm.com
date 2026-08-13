@@ -54,7 +54,10 @@
     <nav class="top-navbar">
         <div class="nav-content">
             <div class="nav-left-group">
-                <div class="nav-brand">
+                <!-- Doubles as the restart: a fresh run on the settings already set, which
+                     is what a hand reaches for the logo expecting. Not a link, so it can
+                     never take the page down with it. -->
+                <div class="nav-brand" id="nav-brand" title="New test with the same settings">
                     <span class="logo-dot"></span>
                     <span class="logo-text">単語タイプ</span>
                 </div>
@@ -6985,6 +6988,33 @@ function setMode(mode, shouldReload = true) {
 
             applyWordCountFilter();
         }
+
+        /* The logo rolls a new run rather than reloading the page. Reloading would throw
+           away the whole session — the deck fetched, the list built, the settings that took
+           several chips to set — only to come back to exactly the settings it had just
+           discarded, and to do it over the network. Nothing about it is wanted; what is
+           wanted is a fresh set of words on the settings already chosen.
+
+           So it is the NEXT TEST button wearing the logo, and it keeps that button's two
+           reservations. A run opened out of the history is somebody's record and is only put
+           away. In a room the words belong to the room, and rolling a solo list underneath
+           everyone is what would throw the whole table out of the race. */
+        function restartWithSameSettings() {
+            // Nothing is being typed under the workshop, and a race is not yours to restart
+            if (isZenMode || isMultiplayerRace) return;
+
+            if (!resultModal.classList.contains("hidden")) {
+                closeResultModalAndContinue();
+                return;
+            }
+
+            if (typeof mpState !== "undefined" && mpState.code) return;
+
+            applyWordCountFilter();
+        }
+
+        document.getElementById("nav-brand")
+            .addEventListener("click", restartWithSameSettings);
 
         /* Everyone back to the starting line. The runners hold their finishing places for as
            long as the result is up, which is when you want to see where everyone came in — but
