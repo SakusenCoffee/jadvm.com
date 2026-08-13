@@ -531,27 +531,39 @@ body {
 }
 
 /* CONTROL GROUPS & SELECTORS */
+/* Two gaps, and the difference between them is the whole layout. What the eye measures is
+   not the gap but the white between the words, and each chip carries 10px of its own padding
+   into that — so the numbers are set against 20px of it, not against each other: 2px between
+   chips reads as 22px, 34px between groups reads as 54px. Two and a half times the distance,
+   which is enough to sort them into clusters without being shown a single line.
+
+   The row gap answers the same question a line down. When the bar wraps, and on a phone
+   where every group gets a line to itself, it is all that separates one group from the
+   next — so it is set well above the 2px a group's own wrapped rows sit at, and a group
+   that has broken over two lines still reads as one thing. */
 .word-count-nav {
     flex-direction: row;
     align-items: center;
     justify-content: center;
     flex-wrap: wrap;
-    gap: 12px;
+    gap: 12px 34px;
 }
 
-/* No box of its own: the chips are the only thing that should draw. Grouping is read from
-   the spacing and the dividers between groups, and the one filled chip is the only mark on
-   the row, so the selected option is what the eye lands on rather than six framed panels. */
+/* No box and no rule of its own: the chips are the only thing that draws. Grouping is read
+   from the spacing alone, so the one filled chip is the only mark on the row and the
+   selected option is what the eye lands on.
+
+   Rules between the groups were tried and taken out again. They were separate elements
+   rather than part of a group, so a group being hidden — and most of them are, in any one
+   mode — left its rule behind: kana mode drew four of them in a row between "saved text"
+   and the times, a picket fence separating nothing from nothing. Spacing cannot come apart
+   from what it separates, since it only exists between two things that are both there.
+
+   No padding either. It sat inside the group's own width and ate into the space between
+   groups, which is now the only thing saying where one ends. */
 .count-selector-group {
     display: flex;
-    gap: 4px;
-    padding: 4px;
-}
-
-.selector-divider {
-    width: 1px;
-    height: 24px;
-    background-color: var(--border-color);
+    gap: 2px;
 }
 
 /* Selection is a state, not an animation. Transitioning background-color meant the
@@ -2958,15 +2970,13 @@ gap: 12px;
 }
 
 .word-count-nav.mp-compact {
-    gap: 6px;
+    /* Same idea at race size: the groups keep their distance so they still read apart, the
+       chips inside them close up */
+    gap: 6px 18px;
     padding: 10px 0 0;
     border-top: 1px solid var(--border-color);
     flex-wrap: wrap;
     justify-content: center;
-}
-
-.word-count-nav.mp-compact .count-selector-group {
-    gap: 2px;
 }
 
 .word-count-nav.mp-compact button {
@@ -2978,10 +2988,6 @@ gap: 12px;
     width: 52px;
     padding: 4px 6px;
     font-size: 0.7rem;
-}
-
-.word-count-nav.mp-compact .selector-divider {
-    margin: 0 2px;
 }
 
 /* The room's board sits above everything and stays put between races */
@@ -3816,9 +3822,8 @@ html {
         font-size: 1.15rem;
     }
 
-    /* Rules between things that are no longer in a row together */
-    .nav-divider,
-    .selector-divider {
+    /* A rule between things that are no longer in a row together */
+    .nav-divider {
         display: none;
     }
 
@@ -3834,8 +3839,11 @@ html {
         justify-content: center;
     }
 
+    /* The groups keep more room between them than the chips do, same as at full width —
+       it is the only thing left saying where one group ends — but less of it, since there
+       is less of it to give */
     .word-count-nav {
-        gap: 8px;
+        gap: 12px 18px;
     }
 
     /* TEST AREA */
