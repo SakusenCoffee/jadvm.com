@@ -245,6 +245,7 @@
                     <button class="kana-count-btn" data-kana-count="25">25c</button>
                     <button class="kana-count-btn" data-kana-count="50">50c</button>
                     <button class="kana-count-btn" data-kana-count="100">100c</button>
+                    <button class="kana-count-btn" data-kana-count="max">max</button>
                     <button class="kana-count-btn" data-kana-count="custom" id="custom-kana-btn">custom</button>
                     <input type="number" class="custom-inline-input hidden" id="custom-kana-inline" min="1" inputmode="numeric" aria-label="Custom character count" />
                 </div>
@@ -1554,6 +1555,7 @@
 let ankiDeckCache = [];
 let tangoJsonCache = {};
 let currentSessionDeck = []; // Add this to store the unshuffled test session
+let kanaDeckIsWholeSet = false; // Whether currentSessionDeck is a one-of-each kana pass
 let activeWordList = [];
 
 /* ---- The words a long list is holding back ------------------------------------------
@@ -4633,27 +4635,48 @@ function setMode(mode, shouldReload = true) {
             if (ankiLoadedDeck !== deck) loadAnkiDeck(deck, { silent: true });
         }
 
+        function makeKanaItem(char) {
+            return {
+                kanji: char,
+                romaji: normalizeRomaji(wanakana.toRomaji(char)),
+                meaning: "Kana Character"
+            };
+        }
+
         function generateKanaList(charSet, count = 100) {
             const list = [];
             for (let i = 0; i < count; i++) {
-                const char = charSet[Math.floor(Math.random() * charSet.length)];
-                list.push({
-                    kanji: char,
-                    romaji: normalizeRomaji(wanakana.toRomaji(char)),
-                    meaning: "Kana Character"
-                });
+                list.push(makeKanaItem(charSet[Math.floor(Math.random() * charSet.length)]));
             }
+            return list;
+        }
+
+        /* What "max" plays: every character the filters leave in, exactly once, in a
+           fresh order. The random draw repeats characters, so no count of it can
+           promise that the run covers the whole set. */
+        function generateFullKanaList(charSet) {
+            const list = charSet.map(makeKanaItem);
+            shuffleArray(list);
             return list;
         }
 
         function applyWordCountFilter(reshuffle = true) {
             if (activeSource === "hiragana" || activeSource === "katakana") {
-                const qty = parseInt(kanaCountSetting, 10) || 25;
-                if (reshuffle || currentSessionDeck.length === 0) {
-                    const charSet = filterKanaSet(
-                        (activeSource === "hiragana") ? HIRAGANA_CHARS : KATAKANA_CHARS);
+                const charSet = filterKanaSet(
+                    (activeSource === "hiragana") ? HIRAGANA_CHARS : KATAKANA_CHARS);
+                const wantsWholeSet = kanaCountSetting === "max";
+                const qty = wantsWholeSet ? charSet.length : (parseInt(kanaCountSetting, 10) || 25);
+
+                /* The two pools are different shapes — a random draw any count can be
+                   sliced out of, and one pass over the whole set — so switching between
+                   them rebuilds even though changing the count alone deliberately
+                   doesn't, or "max" would just take a slice of the random draw. */
+                if (reshuffle || currentSessionDeck.length === 0 || kanaDeckIsWholeSet !== wantsWholeSet) {
                     // Generate a large pool of kana once per session so it can be resized safely
-                    currentSessionDeck = generateKanaList(charSet, Math.max(qty, 500));
+                    currentSessionDeck = wantsWholeSet
+                        ? generateFullKanaList(charSet)
+                        : generateKanaList(charSet, Math.max(qty, 500));
+                    kanaDeckIsWholeSet = wantsWholeSet;
                 }
                 activeWordList = takeWordWindow(currentSessionDeck.slice(0, qty));
             } else {
@@ -6464,7 +6487,7 @@ function setMode(mode, shouldReload = true) {
 
         wireCustomChip(customCountBtn, customCountInline, ["10", "25", "50", "100", "max"],
             () => wordCountSetting, applyWordCount);
-        wireCustomChip(customKanaBtn, customKanaInline, ["10", "25", "50", "100"],
+        wireCustomChip(customKanaBtn, customKanaInline, ["10", "25", "50", "100", "max"],
             () => kanaCountSetting, applyKanaCount);
         // Ten minutes is the ceiling on a single run's clock
         const MAX_CUSTOM_SECONDS = 600;
